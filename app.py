@@ -117,7 +117,7 @@ try:
         table = st.dataframe(
             (
                 filtered_df
-                # .assign(company = lambda x: [f"{name}*" if isin not in set(sunhat_reports["isin"]) else name for name, isin in zip(x['company'], x['isin'])])
+                .assign(company = lambda x: [f"{name}*" if isin not in set(sunhat_reports["isin"]) else name for name, isin in zip(x['company'], x['isin'])])
                 .loc[:, ["company", "link", "country", "sector", "industry", "publication date", "pages PDF", "auditor"]]
             ),
             column_config={
@@ -151,58 +151,57 @@ try:
         query_companies_names = filtered_df.iloc[query_companies, :]["company"].tolist()
 
 
-    # with st.container():
-    #     st.markdown("### Search Engine")
-    #     st.caption(":gray[Reports marked with an asterisk (*) cannot yet be queried. Report search [powered by Sunhat](https://www.getsunhat.com).]")
+    with st.container():
+        st.markdown("### Search Engine")
+        st.caption(":gray[Reports marked with an asterisk (*) cannot yet be queried. Report search [powered by Sunhat](https://www.getsunhat.com).]")
 
-    #     prompt = st.chat_input(define_popover_title(query_companies_names), disabled=query_companies == [] or len(query_companies) > 5)
+        prompt = st.chat_input(define_popover_title(query_companies_names), disabled=query_companies == [] or len(query_companies) > 5)
 
-    #     if prompt:
-    #         log_prompt.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), prompt, ", ".join(query_companies_names)])
-    #         query_reports = sunhat_reports[sunhat_reports["companyName"].isin(query_companies_names)]
+        if prompt:
+            log_prompt.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), prompt, ", ".join(query_companies_names)])
+            query_reports = sunhat_reports[sunhat_reports["companyName"].isin(query_companies_names)]
 
-    #         # For each report, query relevant chunks from PDF (Sunhat), summarize them (GPT-4o), and stream
-    #         for _, query_report in query_reports.iterrows():
-    #             query_response = query_single_report(query_report['id'], prompt).json()
+            # For each report, query relevant chunks from PDF (Sunhat), summarize them (GPT-4o), and stream
+            for _, query_report in query_reports.iterrows():
+                query_response = query_single_report(query_report['id'], prompt).json()
             
-    #             if query_response.get("data", []) == []:
-    #                 st.error(f"Could not find any relevant information in the PDF for {query_report['companyName']}.")
+                if query_response.get("data", []) == []:
+                    st.error(f"Could not find any relevant information in the PDF for {query_report['companyName']}.")
 
-    #             else:
-    #                 query_results = query_response["data"]
-    #                 with st.expander(query_report['companyName'], expanded=True):
-    #                     col_expander_response, col_expander_pdf = st.columns([0.35, 0.65])
+                else:
+                    query_results = query_response["data"]
+                    with st.expander(query_report['companyName'], expanded=True):
+                        col_expander_response, col_expander_pdf = st.columns([0.35, 0.65])
 
-    #                     with col_expander_response:
-    #                         query_results_text = "\n".join([x["text"] for x in query_results])
-    #                         print(query_results_text)
+                        with col_expander_response:
+                            query_results_text = "\n".join([x["text"] for x in query_results])
 
-    #                         with st.chat_message("user"):
-    #                             st.text(prompt)
+                            with st.chat_message("user"):
+                                st.text(prompt)
 
-    #                         with st.chat_message("assistant"):
-    #                             stream = summarize_text_bygpt(
-    #                                 client=client, 
-    #                                 queryText=prompt, 
-    #                                 relevantChunkTexts=query_results_text
-    #                                 )
+                            with st.chat_message("assistant"):
+                                stream = summarize_text_bygpt(
+                                    client=client, 
+                                    queryText=prompt, 
+                                    relevantChunkTexts=query_results_text
+                                    )
                                 
-    #                             gpt_response = st.write_stream(stream)
-    #                             st.markdown(f"[Access the full report here]({query_report['link']})")
+                                gpt_response = st.write_stream(stream)
+                                st.markdown(f"[Access the full report here]({query_report['link']})")
 
 
-    #                     with col_expander_pdf:
-    #                         query_results_annotations = [{
-    #                             "page": c["page"]+1,
-    #                             "x": c["x1"],
-    #                             "y": c["y1"],
-    #                             "height": c["y2"] - c["y1"],
-    #                             "width": c["x2"] - c["x1"],
-    #                             "color": "#4200ff"
-    #                             } for c in query_results]
+                        with col_expander_pdf:
+                            query_results_annotations = [{
+                                "page": c["page"]+1,
+                                "x": c["x1"],
+                                "y": c["y1"],
+                                "height": c["y2"] - c["y1"],
+                                "width": c["x2"] - c["x1"],
+                                "color": "#4200ff"
+                                } for c in query_results]
                             
-    #                         with st.spinner("Downloading and annotating the PDF", show_time=True):
-    #                             display_annotated_pdf(query_report['link'], query_results_annotations)
+                            with st.spinner("Downloading and annotating the PDF", show_time=True):
+                                display_annotated_pdf(query_report['link'], query_results_annotations)
                             
 
 
