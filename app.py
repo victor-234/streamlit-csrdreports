@@ -8,7 +8,6 @@ import altair as alt
 from openai import OpenAI
 from google.oauth2.service_account import Credentials
 from datetime import datetime
-# from streamlit_geolocation import streamlit_geolocation
 
 from helpers import read_data
 from helpers import define_standard_info_mapper
@@ -20,7 +19,6 @@ from helpers import query_single_report
 from helpers import define_popover_title
 from helpers import summarize_text_bygpt
 from helpers import create_google_auth_credentials
-from helpers import get_remote_ip
 
 
 # ------------------------------------ SETUP ----------------------------------
@@ -43,7 +41,7 @@ log_users = log_spreadsheet.worksheet("users")
 
 
 # .../?ref=linkedin_victor logs the referrer
-log_users.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), st.query_params.get("ref", ""), get_remote_ip()])
+log_users.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), st.query_params.get("ref", "")])
 
 
 # ------------------------------------ DATA ----------------------------------
