@@ -307,7 +307,7 @@ def display_annotated_pdf(query_report_link, similar_pages):
         height=800,
         pages_to_render=[
             int(p["page"]) 
-            for p in sorted(similar_pages, key=lambda x: x["score"], reverse=True)[:3]
+            for p in sorted(similar_pages, key=lambda x: x["score"], reverse=True)
             ],
         )
 
