@@ -4,6 +4,9 @@ import altair as alt
 import pandas as pd
 import numpy as np
 import requests
+from sklearn.metrics.pairwise import euclidean_distances
+from ast import literal_eval
+from mistralai import Mistral
 
 from streamlit_pdf_viewer import pdf_viewer
 
@@ -50,9 +53,9 @@ def read_data() -> pd.DataFrame:
                 .drop_duplicates(subset=['isin'])
                 .drop(["company", "pages"], axis=1)
             ),
-            on=["isin"], how="outer", indicator=True
+            on=["isin"], how="outer", indicator="_mergeHeatmap"
         )
-        .query("_merge != 'right_only'")
+        .query("_mergeHeatmap != 'right_only'")
         .sort_values("publication date", ascending=True)
     )
 
@@ -251,7 +254,8 @@ def get_all_reports() -> pd.DataFrame:
         )
 
 
-def define_popover_title(query_companies_names) -> str:
+def define_popover_title(query_companies_df) -> str:
+    query_companies_names = query_companies_df['company'].values
     """ Define the title for the popover """
     if len(query_companies_names) == 0:
         return "Select companies from the table by selecting the box to the left of the name"
@@ -296,12 +300,15 @@ def summarize_text_bygpt(client, queryText, relevantChunkTexts):
         )
 
 
-def display_annotated_pdf(query_report_link, query_results_annotations):
+def display_annotated_pdf(query_report_link, similar_pages):
     return pdf_viewer(
         input=download_pdf(query_report_link),
-        annotations=query_results_annotations,
+        # annotations=query_results_annotations,
         height=800,
-        pages_to_render=[a["page"] for a in query_results_annotations],
+        pages_to_render=[
+            int(p["page"]) 
+            for p in sorted(similar_pages, key=lambda x: x["score"], reverse=True)[:3]
+            ],
         )
 
 
@@ -341,3 +348,49 @@ def create_google_auth_credentials():
             f,
             indent=4
         )
+
+
+def read_supabase_documents(supabase):
+    return (
+        pd.DataFrame(
+            (
+                supabase
+                .from_("documents")
+                .select("id, company_id, year, type, pages, companies(id, name, isin)")
+                .execute()
+            )
+            .data
+        )
+        .assign(
+            company = lambda x: x['companies'].apply(lambda y: y['name']),
+            isin = lambda x: x['companies'].apply(lambda y: y['isin'])
+        )
+        .drop("companies", axis=1)
+        .rename(columns={
+            'id': 'document_id'
+        })
+    )
+
+
+def get_most_similar_pages(prompt: str, pages: list, topk=5):
+    """ Embed prompt with Mistral, compare with all supplied pages and return topk """
+    client = Mistral(api_key=st.secrets["MISTRAL_API_KEY"])
+    embeddings_response = client.embeddings.create(
+        model="mistral-embed",
+        inputs=prompt
+    )
+    prompt_emb = embeddings_response.data[0].embedding
+
+    for page in pages:
+        if len(page["content"].strip()) < 500:
+            page["score"] = 0
+        else:
+            distance = euclidean_distances([literal_eval(page["embedding"])], [prompt_emb])
+            page["score"] = distance[0][0]
+
+
+    pages = sorted(pages, key=lambda x: x["score"], reverse=True)
+    pages = pages[:topk]
+    print([p["content"] for p in pages])
+    
+    return pages

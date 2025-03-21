@@ -1,30 +1,39 @@
 import streamlit as st
-import requests
-import gspread
-
 import pandas as pd
-import altair as alt
-
-from openai import OpenAI
-from google.oauth2.service_account import Credentials
 from datetime import datetime
+from mistralai import Mistral
+from supabase import create_client, Client
+from google.oauth2.service_account import Credentials
+import gspread
+from openai import OpenAI
 
 from helpers import read_data
 from helpers import define_standard_info_mapper
 from helpers import plot_ui
 from helpers import plot_heatmap
+from helpers import read_supabase_documents
 from helpers import display_annotated_pdf
 from helpers import get_all_reports
 from helpers import query_single_report
 from helpers import define_popover_title
 from helpers import summarize_text_bygpt
 from helpers import create_google_auth_credentials
+from helpers import get_most_similar_pages
+
 
 
 # ------------------------------------ SETUP ----------------------------------
 st.set_page_config(layout="wide", page_title="SRN CSRD Archive", page_icon="srn-icon.png")
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 st.markdown("""<style> footer {visibility: hidden;} </style> """, unsafe_allow_html=True)
+
+# Supabase
+supabase_url: str = st.secrets["SUPABASE_URL"]
+supabase_key: str = st.secrets["SUPABASE_KEY"]
+supabase: Client = create_client(supabase_url, supabase_key)
+
+
+# OpenAI
+openai_client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # Google Sheets API
 create_google_auth_credentials()
@@ -39,15 +48,19 @@ log_spreadsheet = google_client.open_by_key(sheet_id)
 log_prompt = log_spreadsheet.worksheet("prompts")
 log_users = log_spreadsheet.worksheet("users")
 
+# log_users.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), st.query_params.get("ref", "")])# .../?ref=linkedin_victor logs the referrer
 
-# .../?ref=linkedin_victor logs the referrer
-log_users.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), st.query_params.get("ref", "")])
-
-
-# ------------------------------------ DATA ----------------------------------
-df = read_data()
 standard_info_mapper = define_standard_info_mapper()
-sunhat_reports = get_all_reports()
+
+googlesheet = read_data()
+hosted_docs = read_supabase_documents(supabase)
+
+df = (
+    googlesheet
+    .merge(hosted_docs, on=['company', 'isin'], how="outer", indicator="_mergeSupabase")
+    .query("_mergeSupabase != 'right_only'")
+)
+
 
 
 if "selected_companies" not in st.session_state:
@@ -111,13 +124,14 @@ if len(selected_companies) != 0:
 try:
     tab1, tab2 = st.tabs(["List of reports", "Heatmap of topics reported"])
 
+
     # ------------------------------------ TABLE ----------------------------------
     with tab1:
 
         table = st.dataframe(
             (
                 filtered_df
-                .assign(company = lambda x: [f"{name}*" if isin not in set(sunhat_reports["isin"]) else name for name, isin in zip(x['company'], x['isin'])])
+                # .assign(company = lambda x: [f"{name}*" if isin not in set(sunhat_reports["isin"]) else name for name, isin in zip(x['company'], x['isin'])])
                 .loc[:, ["company", "link", "country", "sector", "industry", "publication date", "pages PDF", "auditor"]]
             ),
             column_config={
@@ -148,68 +162,67 @@ try:
         )
 
         query_companies = table.selection.rows
-        query_companies_names = filtered_df.iloc[query_companies, :]["company"].tolist()
+        query_companies_df = filtered_df.iloc[query_companies, :]
 
 
+    # ----- SEARCH ENGIN -----
     with st.container():
         st.markdown("### Search Engine")
         st.caption(":gray[Reports marked with an asterisk (*) cannot yet be queried. Report search [powered by Sunhat](https://www.getsunhat.com).]")
 
-        prompt = st.chat_input(define_popover_title(query_companies_names), disabled=query_companies == [] or len(query_companies) > 5)
+        prompt = st.chat_input(define_popover_title(query_companies_df), disabled=query_companies == [] or len(query_companies) > 5)
 
         if prompt:
-            log_prompt.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), prompt, ", ".join(query_companies_names)])
-            query_reports = sunhat_reports[sunhat_reports["companyName"].isin(query_companies_names)]
+            # log_prompt.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), prompt, ", ".join(query_companies_names)])
 
-            # For each report, query relevant chunks from PDF (Sunhat), summarize them (GPT-4o), and stream
-            for _, query_report in query_reports.iterrows():
-                query_response = query_single_report(query_report['id'], prompt).json()
+            for _, query_report in query_companies_df.iterrows():
+                try:
+                    with st.spinner():
+                        query_report_allpages = (
+                            supabase.table("pages")
+                            .select("*")
+                            .eq("document_id", query_report['document_id'])
+                            .execute()
+                        ).data
+
+                    similar_pages = get_most_similar_pages(prompt, query_report_allpages, topk=20)
+                    
+                    if similar_pages == []:
+                        st.error(f"We have not processed the report of {query_report['company']}.")
+
+                    else:
+                        with st.expander(query_report['company'], expanded=True):
+                            col_expander_response, col_expander_pdf = st.columns([0.35, 0.65])
+
+                            with col_expander_response:
+                                query_results_text = "\n".join([x["content"] for x in similar_pages])
+
+                                with st.chat_message("user"):
+                                    st.text(prompt)
+
+                                with st.chat_message("assistant"):
+                                    stream = summarize_text_bygpt(
+                                        client=openai_client, 
+                                        queryText=prompt, 
+                                        relevantChunkTexts=query_results_text
+                                        )
+                                    
+                                    gpt_response = st.write_stream(stream)
+                                    st.markdown(f"[Access the full report here]({query_report['link']})")
+
+                            with col_expander_pdf:
+                                with st.spinner("Downloading and annotating the PDF", show_time=True):
+                                    display_annotated_pdf(query_report['link'], similar_pages)
+
+
+                except:
+                    st.error(f"Could not find any relevant information in the PDF for {query_report['company']}.")
+
             
-                if query_response.get("data", []) == []:
-                    st.error(f"Could not find any relevant information in the PDF for {query_report['companyName']}.")
-
-                else:
-                    query_results = query_response["data"]
-                    with st.expander(query_report['companyName'], expanded=True):
-                        col_expander_response, col_expander_pdf = st.columns([0.35, 0.65])
-
-                        with col_expander_response:
-                            query_results_text = "\n".join([x["text"] for x in query_results])
-
-                            with st.chat_message("user"):
-                                st.text(prompt)
-
-                            with st.chat_message("assistant"):
-                                stream = summarize_text_bygpt(
-                                    client=client, 
-                                    queryText=prompt, 
-                                    relevantChunkTexts=query_results_text
-                                    )
-                                
-                                gpt_response = st.write_stream(stream)
-                                st.markdown(f"[Access the full report here]({query_report['link']})")
-
-
-                        with col_expander_pdf:
-                            query_results_annotations = [{
-                                "page": c["page"]+1,
-                                "x": c["x1"],
-                                "y": c["y1"],
-                                "height": c["y2"] - c["y1"],
-                                "width": c["x2"] - c["x1"],
-                                "color": "#4200ff"
-                                } for c in query_results]
-                            
-                            with st.spinner("Downloading and annotating the PDF", show_time=True):
-                                display_annotated_pdf(query_report['link'], query_results_annotations)
-                            
-
-
-        
 
 
 
-    # ------------------------------------ HEATMAP ----------------------------------
+# ------------------------------------ HEATMAP ----------------------------------
     with tab2:
         col_tab2_left, col_tab2_right = st.columns([0.5, 0.5])
 
