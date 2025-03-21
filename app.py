@@ -65,8 +65,6 @@ df = (
     .query('_mergePages != "right_only"')
 )
 
-st.write(df)
-
 
 if "selected_companies" not in st.session_state:
     st.session_state.selected_companies = set()
@@ -173,7 +171,7 @@ try:
     # ----- SEARCH ENGIN -----
     with st.container():
         st.markdown("### Search Engine")
-        st.caption(":gray[Reports marked with an asterisk (*) cannot yet be queried. Report search [powered by Sunhat](https://www.getsunhat.com).]")
+        st.caption(":gray[Reports marked with an asterisk (*) cannot yet be queried. We will upload them soon!]")
 
         prompt = st.chat_input(define_popover_title(query_companies_df), disabled=query_companies == [] or len(query_companies) > 5)
 
@@ -190,7 +188,7 @@ try:
                             .execute()
                         ).data
 
-                    similar_pages = get_most_similar_pages(prompt, query_report_allpages, topk=20)
+                    similar_pages = get_most_similar_pages(prompt, query_report_allpages, topk=15)
                     
                     if similar_pages == []:
                         st.error(f"We have not processed the report of {query_report['company']}.")
@@ -217,7 +215,9 @@ try:
 
                             with col_expander_pdf:
                                 with st.spinner("Downloading and annotating the PDF", show_time=True):
-                                    display_annotated_pdf(query_report['link'], similar_pages)
+                                    display_annotated_pdf(
+                                        f"https://gbixxtefgqebkaviusss.supabase.co/storage/v1/object/public/document-pdfs/{query_report.document_id}.pdf",
+                                        similar_pages)
 
 
                 except:
