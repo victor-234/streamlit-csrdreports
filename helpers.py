@@ -4,7 +4,7 @@ import altair as alt
 import pandas as pd
 import numpy as np
 import requests
-from sklearn.metrics.pairwise import euclidean_distances
+from sklearn.metrics.pairwise import cosine_similarity
 from ast import literal_eval
 from mistralai import Mistral
 
@@ -385,12 +385,11 @@ def get_most_similar_pages(prompt: str, pages: list, topk=5):
         if len(page["content"].strip()) < 500:
             page["score"] = 0
         else:
-            distance = euclidean_distances([literal_eval(page["embedding"])], [prompt_emb])
+            distance = cosine_similarity([literal_eval(page["embedding"])], [prompt_emb])
             page["score"] = distance[0][0]
 
 
     pages = sorted(pages, key=lambda x: x["score"], reverse=True)
     pages = pages[:topk]
-    print([p["content"] for p in pages])
     
     return pages
