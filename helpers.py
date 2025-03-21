@@ -300,15 +300,9 @@ def summarize_text_bygpt(client, queryText, relevantChunkTexts):
         )
 
 
-def display_annotated_pdf(query_report_link, similar_pages):
+def display_annotated_pdf(query_report_link, pages_to_render):
     return pdf_viewer(
-        input=download_pdf(query_report_link),
-        # annotations=query_results_annotations,
-        height=800,
-        pages_to_render=[
-            int(p["page"]) 
-            for p in sorted(similar_pages, key=lambda x: x["score"], reverse=True)
-            ],
+        input=download_pdf(query_report_link), height=800, pages_to_render=pages_to_render
         )
 
 

@@ -5,6 +5,7 @@ from mistralai import Mistral
 from supabase import create_client, Client
 from google.oauth2.service_account import Credentials
 import gspread
+import ast
 from openai import OpenAI
 
 from helpers import read_data
@@ -176,7 +177,7 @@ try:
         prompt = st.chat_input(define_popover_title(query_companies_df), disabled=query_companies == [] or len(query_companies) > 5)
 
         if prompt:
-            # log_prompt.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), prompt, ", ".join(query_companies_names)])
+            log_prompt.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), prompt, ", ".join(query_companies_df['company'].values)])
 
             for _, query_report in query_companies_df.iterrows():
                 try:
@@ -213,16 +214,21 @@ try:
                                     gpt_response = st.write_stream(stream)
                                     st.markdown(f"[Access the full report here]({query_report['link']})")
 
+
                             with col_expander_pdf:
                                 with st.spinner("Downloading and annotating the PDF", show_time=True):
                                     display_annotated_pdf(
                                         f"https://gbixxtefgqebkaviusss.supabase.co/storage/v1/object/public/document-pdfs/{query_report.document_id}.pdf",
-                                        similar_pages)
+                                        pages_to_render=[
+                                            int(p["page"]) - ast.literal_eval(query_report["pages"])[0]-1
+                                            for p in sorted(similar_pages, key=lambda x: x["score"], reverse=True)
+                                            ]
+                                        )
 
 
-                except:
+                except Exception as e:
                     st.error(f"Could not find any relevant information in the PDF for {query_report['company']}.")
-
+                    print(e)
             
 
 
