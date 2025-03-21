@@ -292,8 +292,8 @@ def summarize_text_bygpt(client, queryText, relevantChunkTexts):
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": "You are an expert in gathering information from sustainability reports."},
-            {"role": "user", "content": f"Answer diligently on this question {queryText} from the following chunks of the report:"},
-            {"role": "user", "content": relevantChunkTexts},
+            {"role": "user", "content": f"Answer diligently on this question {queryText} from the following texts of the report:"},
+            {"role": "user", "content": relevantChunkTexts.replace("\n", " ").replace("\t", " ")},
             {"role": "user", "content": f"Be concise and provide the most relevant information from the texts only. Do not use the internet or general knowledge."},
         ],
         stream=True
