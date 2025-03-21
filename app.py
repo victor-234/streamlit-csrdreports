@@ -19,6 +19,7 @@ from helpers import define_popover_title
 from helpers import summarize_text_bygpt
 from helpers import create_google_auth_credentials
 from helpers import get_most_similar_pages
+from helpers import read_supabase_pages
 
 
 
@@ -54,13 +55,17 @@ standard_info_mapper = define_standard_info_mapper()
 
 googlesheet = read_data()
 hosted_docs = read_supabase_documents(supabase)
+pages = read_supabase_pages(supabase)
 
 df = (
     googlesheet
     .merge(hosted_docs, on=['company', 'isin'], how="outer", indicator="_mergeSupabase")
-    .query("_mergeSupabase != 'right_only'")
+    .dropna(subset=["company", "isin", "country", "sector", "industry"])
+    .merge(pages, on=["document_id"], how="outer", indicator="_mergePages")
+    .query('_mergePages != "right_only"')
 )
 
+st.write(df)
 
 
 if "selected_companies" not in st.session_state:
@@ -131,7 +136,7 @@ try:
         table = st.dataframe(
             (
                 filtered_df
-                # .assign(company = lambda x: [f"{name}*" if isin not in set(sunhat_reports["isin"]) else name for name, isin in zip(x['company'], x['isin'])])
+                .assign(company = lambda x: [company if _mergePages == "both" else f"{company}*" for company, _mergePages in zip(x["company"], x["_mergePages"])])
                 .loc[:, ["company", "link", "country", "sector", "industry", "publication date", "pages PDF", "auditor"]]
             ),
             column_config={

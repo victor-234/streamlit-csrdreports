@@ -51,7 +51,7 @@ def read_data() -> pd.DataFrame:
                     )
                 .query("year == 2024")
                 .drop_duplicates(subset=['isin'])
-                .drop(["company", "pages"], axis=1)
+                .drop(["company", "pages", "year", "type"], axis=1)
             ),
             on=["isin"], how="outer", indicator="_mergeHeatmap"
         )
@@ -393,3 +393,17 @@ def get_most_similar_pages(prompt: str, pages: list, topk=5):
     pages = pages[:topk]
     
     return pages
+
+
+def read_supabase_pages(supabase):
+    return (
+        pd.DataFrame(
+            (
+                supabase
+                .from_("unique_pages")
+                .select("document_id")
+                .execute()
+            )
+            .data
+        )
+    )
