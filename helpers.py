@@ -258,11 +258,13 @@ def define_popover_title(query_companies_df) -> str:
     query_companies_names = query_companies_df['company'].values
     """ Define the title for the popover """
     if len(query_companies_names) == 0:
-        return "Select companies from the table by selecting the box to the left of the name"
+        return "Select up to 5 companies from the table by selecting the box to the left of the name"
     elif len(query_companies_names) > 5:
         return f"You can only select a maximum of five companies ({len(query_companies_names)} selected)"
     elif len(query_companies_names) == 1:
         return f"Search in the report of {query_companies_names[0]}"
+    elif len(query_companies_names) == 2:
+        return f"Search in the report of {query_companies_names[0]} and {query_companies_names[1]}"
     elif len(query_companies_names) > 1:
         return f"Search in the reports of {', '.join(query_companies_names[:-1])}, and {query_companies_names[-1]}"
 
@@ -302,7 +304,10 @@ def summarize_text_bygpt(client, queryText, relevantChunkTexts):
 
 def display_annotated_pdf(query_report_link, pages_to_render):
     return pdf_viewer(
-        input=download_pdf(query_report_link), height=800, pages_to_render=pages_to_render
+        input=download_pdf(query_report_link), 
+        height=800, 
+        pages_to_render=pages_to_render, 
+        resolution_boost=2
         )
 
 

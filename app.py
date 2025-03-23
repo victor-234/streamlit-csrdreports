@@ -124,6 +124,17 @@ if len(selected_companies) != 0:
     filtered_df = filtered_df[filtered_df["company"].isin(selected_companies)]
 
 
+filtered_and_sorted_df = (
+        filtered_df
+        .assign(
+            company_withAccessInfo = lambda x: [
+                company if _mergePages == "both" else f"{company}*" 
+                for company, _mergePages in zip(x["company"], x["_mergePages"])
+                ],
+            company_uncased = lambda x: x["company"].str.lower()
+            )
+        .sort_values("company_uncased", ascending=True)
+    )
 
 try:
     tab1, tab2 = st.tabs(["List of reports", "Heatmap of topics reported"])
@@ -133,13 +144,11 @@ try:
     with tab1:
 
         table = st.dataframe(
-            (
-                filtered_df
-                .assign(company = lambda x: [company if _mergePages == "both" else f"{company}*" for company, _mergePages in zip(x["company"], x["_mergePages"])])
-                .loc[:, ["company", "link", "country", "sector", "industry", "publication date", "pages PDF", "auditor"]]
-            ),
+            filtered_and_sorted_df.loc[:, [
+                "company", "company_withAccessInfo", "link", "country", "sector", "industry", "publication date", "pages PDF", "auditor"
+                ]],
             column_config={
-                "company": st.column_config.Column(width="medium", label="Company"),
+                "company_withAccessInfo": st.column_config.Column(width="medium", label="Company"),
                 "link": st.column_config.LinkColumn(
                     label="Download",
                     width="small",
@@ -161,85 +170,84 @@ try:
             hide_index=True,
             on_select="rerun",
             selection_mode="multi-row",
-            # height=35 * len(filtered_df) + 38,
         )
 
         query_companies = table.selection.rows
-        query_companies_df = filtered_df.iloc[query_companies, :]
+        query_companies_df = filtered_and_sorted_df.iloc[query_companies, :]
 
 
-    # ----- SEARCH ENGIN -----
-    with st.container():
-        st.markdown("### Search Engine")
-        st.caption(":gray[Reports marked with an asterisk (*) cannot yet be queried. We will upload them soon!]")
+        # ----- SEARCH ENGINE -----
+        with st.container():
+            st.markdown("### Search Engine")
+            st.caption(":gray[Reports marked with an asterisk (*) cannot yet be queried. We will upload them soon!]")
 
-        prompt = st.chat_input(define_popover_title(query_companies_df), disabled=query_companies == [] or len(query_companies) > 5)
+            prompt = st.chat_input(define_popover_title(query_companies_df), disabled=query_companies == [] or len(query_companies) > 5)
 
-        if prompt:
-            log_prompt.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), prompt, ", ".join(query_companies_df['company'].values)])
+            if prompt:
+                log_prompt.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), prompt, ", ".join(query_companies_df['company'].values)])
 
-            for _, query_document in query_companies_df.iterrows():
-                # Define stuff
-                query_company_name = query_document['company']
-                query_document_id = query_document['document_id']
-                query_document_start_page_pdf = int(ast.literal_eval(query_document["pages"])[0])
-                query_document_url = f"https://gbixxtefgqebkaviusss.supabase.co/storage/v1/object/public/document-pdfs/{query_document_id}.pdf"
+                for _, query_document in query_companies_df.iterrows():
+                    # Define stuff
+                    query_company_name = query_document['company']
+                    query_document_id = query_document['document_id']
+                    query_document_start_page_pdf = int(ast.literal_eval(query_document["pages"])[0])
+                    query_document_url = f"https://gbixxtefgqebkaviusss.supabase.co/storage/v1/object/public/document-pdfs/{query_document_id}.pdf"
 
-                try:
-                    with st.spinner():
-                        # Query all pages of the selected document
-                        query_report_allpages = (
-                            supabase.table("pages")
-                            .select("*")
-                            .eq("document_id", query_document_id)
-                            .execute()
-                        ).data
+                    try:
+                        with st.spinner():
+                            # Query all pages of the selected document
+                            query_report_allpages = (
+                                supabase.table("pages")
+                                .select("*")
+                                .eq("document_id", query_document_id)
+                                .execute()
+                            ).data
 
-                    similar_pages = get_most_similar_pages(prompt, query_report_allpages, top_pages=5)
+                        similar_pages = get_most_similar_pages(prompt, query_report_allpages, top_pages=5)
+                                            
+                        if similar_pages == []:
+                            st.error(f"We have not processed the report of {query_company_name}.")
+
+                        else:
+                            with st.expander(query_company_name, expanded=True):
+                                col_expander_response, col_expander_pdf = st.columns([0.35, 0.65])
+
+                                # Left column: Prompt + OpenAI response (@To-Do: switch to Mistral)
+                                with col_expander_response:
+                                    query_results_text = "\n".join([x["content"] for x in similar_pages])
+
+                                    with st.chat_message("user"):
+                                        st.text(prompt)
+
+                                    with st.chat_message("assistant"):
+                                        stream = summarize_text_bygpt(
+                                            client=openai_client, 
+                                            queryText=prompt, 
+                                            relevantChunkTexts=query_results_text
+                                            )
                                         
-                    if similar_pages == []:
-                        st.error(f"We have not processed the report of {query_company_name}.")
+                                        gpt_response = st.write_stream(stream)
+                                        
+                                        relevant_pages_first = int(similar_pages[0]["page"]) - query_document_start_page_pdf + 1
+                                        st.markdown(f"[Access the full report here]({query_document_url}) or jump directly [to the relevant pages]({query_document_url + "#page={relevant_pages_first}"})")
 
-                    else:
-                        with st.expander(query_company_name, expanded=True):
-                            col_expander_response, col_expander_pdf = st.columns([0.35, 0.65])
+                                # Right column: Render relevant PDF pages
+                                with col_expander_pdf:
+                                    pages_to_render = [
+                                        int(p["page"]) - query_document_start_page_pdf + 1
+                                        for p in similar_pages
+                                        ]
 
-                            # Left column: Prompt + OpenAI response (@To-Do: switch to Mistral)
-                            with col_expander_response:
-                                query_results_text = "\n".join([x["content"] for x in similar_pages])
-
-                                with st.chat_message("user"):
-                                    st.text(prompt)
-
-                                with st.chat_message("assistant"):
-                                    stream = summarize_text_bygpt(
-                                        client=openai_client, 
-                                        queryText=prompt, 
-                                        relevantChunkTexts=query_results_text
-                                        )
-                                    
-                                    gpt_response = st.write_stream(stream)
-                                    st.markdown(f"[Access the full report here]({query_document_url})")
-
-                            # Right column: Render relevant PDF pages
-                            with col_expander_pdf:
-                                pages_to_render = [
-                                    int(p["page"]) - query_document_start_page_pdf + 1
-                                    for p in sorted(similar_pages, key=lambda x: x["score"], reverse=True)
-                                    ]
-                                
-                                print(pages_to_render)
-
-                                with st.spinner("Downloading and finding the relevant pages", show_time=True):
-                                    display_annotated_pdf(
-                                        query_document_url,
-                                        pages_to_render=pages_to_render[:3]
-                                        )
+                                    with st.spinner("Downloading and finding the relevant pages", show_time=True):
+                                        display_annotated_pdf(
+                                            query_document_url,
+                                            pages_to_render=pages_to_render[:3]
+                                            )
 
 
-                except Exception as e:
-                    st.error(f"Could not find any relevant information in the PDF for {query_company_name}.")
-                    print(e)
+                    except Exception as e:
+                        st.error(f"Could not find any relevant information in the PDF for {query_company_name}.")
+                        print(e)
             
 
 
