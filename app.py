@@ -145,7 +145,7 @@ try:
 
         table = st.dataframe(
             filtered_and_sorted_df.loc[:, [
-                "company", "company_withAccessInfo", "link", "country", "sector", "industry", "publication date", "pages PDF", "auditor"
+                "company_withAccessInfo", "link", "country", "sector", "industry", "publication date", "pages PDF", "auditor"
                 ]],
             column_config={
                 "company_withAccessInfo": st.column_config.Column(width="medium", label="Company"),
