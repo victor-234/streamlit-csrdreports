@@ -114,14 +114,14 @@ filtered_df = df[
 with col3:
     selected_companies = st.multiselect(
         label="Filter by name",
-        options=[None] + sorted(df["company"].str.title().unique()),
+        options=[None] + sorted(df["company"]),
         default=None,
         key="tab1_selectbox"
     )
 
 # If the user selects a company, we filter; otherwise we keep all rows.
 if len(selected_companies) != 0:
-    filtered_df = filtered_df[filtered_df["company"].str.title().isin(selected_companies)]
+    filtered_df = filtered_df[filtered_df["company"].isin(selected_companies)]
 
 
 
@@ -144,7 +144,6 @@ try:
                     label="Download",
                     width="small",
                     display_text="Link"
-                    # display_text="^https://.*#download=(.*)$"
                 ),
                 "country": st.column_config.Column(label="Country"),
                 "sector": st.column_config.Column(width="medium", label="Sector"),
@@ -179,25 +178,33 @@ try:
         if prompt:
             log_prompt.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), prompt, ", ".join(query_companies_df['company'].values)])
 
-            for _, query_report in query_companies_df.iterrows():
+            for _, query_document in query_companies_df.iterrows():
+                # Define stuff
+                query_company_name = query_document['company']
+                query_document_id = query_document['document_id']
+                query_document_start_page_pdf = int(ast.literal_eval(query_document["pages"])[0])
+                query_document_url = f"https://gbixxtefgqebkaviusss.supabase.co/storage/v1/object/public/document-pdfs/{query_document_id}.pdf"
+
                 try:
                     with st.spinner():
+                        # Query all pages of the selected document
                         query_report_allpages = (
                             supabase.table("pages")
                             .select("*")
-                            .eq("document_id", query_report['document_id'])
+                            .eq("document_id", query_document_id)
                             .execute()
                         ).data
 
-                    similar_pages = get_most_similar_pages(prompt, query_report_allpages, topk=15)
-                    
+                    similar_pages = get_most_similar_pages(prompt, query_report_allpages, top_pages=3)
+                                        
                     if similar_pages == []:
-                        st.error(f"We have not processed the report of {query_report['company']}.")
+                        st.error(f"We have not processed the report of {query_company_name}.")
 
                     else:
-                        with st.expander(query_report['company'], expanded=True):
+                        with st.expander(query_company_name, expanded=True):
                             col_expander_response, col_expander_pdf = st.columns([0.35, 0.65])
 
+                            # Left column: Prompt + OpenAI response (@To-Do: switch to Mistral)
                             with col_expander_response:
                                 query_results_text = "\n".join([x["content"] for x in similar_pages])
 
@@ -212,22 +219,24 @@ try:
                                         )
                                     
                                     gpt_response = st.write_stream(stream)
-                                    st.markdown(f"[Access the full report here]({query_report['link']})")
+                                    st.markdown(f"[Access the full report here]({query_document_url})")
 
-
+                            # Right column: Render relevant PDF pages
                             with col_expander_pdf:
-                                with st.spinner("Downloading and annotating the PDF", show_time=True):
+                                pages_to_render = [
+                                    int(p["page"]) - query_document_start_page_pdf + 1
+                                    for p in sorted(similar_pages, key=lambda x: x["score"], reverse=True)
+                                    ]
+
+                                with st.spinner("Downloading and finding the relevant pages", show_time=True):
                                     display_annotated_pdf(
-                                        f"https://gbixxtefgqebkaviusss.supabase.co/storage/v1/object/public/document-pdfs/{query_report.document_id}.pdf",
-                                        pages_to_render=[
-                                            int(p["page"]) - ast.literal_eval(query_report["pages"])[0]-1
-                                            for p in sorted(similar_pages, key=lambda x: x["score"], reverse=True)
-                                            ]
+                                        query_document_url,
+                                        pages_to_render=pages_to_render
                                         )
 
 
                 except Exception as e:
-                    st.error(f"Could not find any relevant information in the PDF for {query_report['company']}.")
+                    st.error(f"Could not find any relevant information in the PDF for {query_company_name}.")
                     print(e)
             
 

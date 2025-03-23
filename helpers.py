@@ -99,7 +99,7 @@ def plot_ui(which: str, df: pd.DataFrame) -> None:
                     {len(df)}
                 </p>
                 <p style="margin-top: 10px;">CSRD reports so far</p>
-                <a href="https://sustainabilityreportingnavigator.com/csrd-first100.pdf" target="_blank" style="color: #4200ff; font-size: 10pt">(Analysis of the first 100 reports)</a>
+                <a href="https://sustainabilityreportingnavigator.com/csrd-first100.pdf" target="_blank" style="font-size: 10pt">(Analysis of the first 100 reports)</a>
             </div>
             """,
             unsafe_allow_html=True
@@ -366,7 +366,7 @@ def read_supabase_documents(supabase):
     )
 
 
-def get_most_similar_pages(prompt: str, pages: list, topk=5):
+def get_most_similar_pages(prompt: str, pages: list, top_pages=3):
     """ Embed prompt with Mistral, compare with all supplied pages and return topk """
     client = Mistral(api_key=st.secrets["MISTRAL_API_KEY"])
     embeddings_response = client.embeddings.create(
@@ -384,7 +384,7 @@ def get_most_similar_pages(prompt: str, pages: list, topk=5):
 
 
     pages = sorted(pages, key=lambda x: x["score"], reverse=True)
-    pages = pages[:topk]
+    pages = pages[:top_pages]
     
     return pages
 
