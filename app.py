@@ -25,7 +25,7 @@ from helpers import read_supabase_pages
 
 
 # ------------------------------------ SETUP ----------------------------------
-st.set_page_config(layout="wide", page_title="SRN CSRD Archive", page_icon="srn-icon.png")
+st.set_page_config(layout="wide", page_title="CSRD Reports | SRN", page_icon="srn-icon.png")
 st.markdown("""<style> footer {visibility: hidden;} </style> """, unsafe_allow_html=True)
 
 # Supabase
@@ -195,7 +195,7 @@ try:
                             .execute()
                         ).data
 
-                    similar_pages = get_most_similar_pages(prompt, query_report_allpages, top_pages=3)
+                    similar_pages = get_most_similar_pages(prompt, query_report_allpages, top_pages=5)
                                         
                     if similar_pages == []:
                         st.error(f"We have not processed the report of {query_company_name}.")
@@ -227,11 +227,13 @@ try:
                                     int(p["page"]) - query_document_start_page_pdf + 1
                                     for p in sorted(similar_pages, key=lambda x: x["score"], reverse=True)
                                     ]
+                                
+                                print(pages_to_render)
 
                                 with st.spinner("Downloading and finding the relevant pages", show_time=True):
                                     display_annotated_pdf(
                                         query_document_url,
-                                        pages_to_render=pages_to_render
+                                        pages_to_render=pages_to_render[:3]
                                         )
 
 
