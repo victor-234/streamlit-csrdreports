@@ -229,7 +229,7 @@ try:
                                         gpt_response = st.write_stream(stream)
                                         
                                         relevant_pages_first = int(similar_pages[0]["page"]) - query_document_start_page_pdf + 1
-                                        st.markdown(f"[Access the full report here]({query_document_url}) or jump directly [to the relevant pages]({query_document_url + "#page={relevant_pages_first}"})")
+                                        st.markdown(f"[Access the full report here]({query_document_url}) or jump directly [to the relevant pages]({query_document_url + f"#page={relevant_pages_first}"})")
 
                                 # Right column: Render relevant PDF pages
                                 with col_expander_pdf:
