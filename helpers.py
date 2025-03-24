@@ -258,15 +258,15 @@ def define_popover_title(query_companies_df) -> str:
     query_companies_names = query_companies_df['company'].values
     """ Define the title for the popover """
     if len(query_companies_names) == 0:
-        return "Select up to 5 companies from the table by selecting the box to the left of the name"
-    elif len(query_companies_names) > 5:
-        return f"You can only select a maximum of five companies ({len(query_companies_names)} selected)"
+        return "Select a company from the table by selecting the box to the left of the name"
+    elif len(query_companies_names) > 1:
+        return f"You can only select one company currently ({len(query_companies_names)} selected)"
     elif len(query_companies_names) == 1:
         return f"Search in the report of {query_companies_names[0]}"
-    elif len(query_companies_names) == 2:
-        return f"Search in the report of {query_companies_names[0]} and {query_companies_names[1]}"
-    elif len(query_companies_names) > 1:
-        return f"Search in the reports of {', '.join(query_companies_names[:-1])}, and {query_companies_names[-1]}"
+    # elif len(query_companies_names) == 2:
+    #     return f"Search in the report of {query_companies_names[0]} and {query_companies_names[1]}"
+    # elif len(query_companies_names) > 1:
+    #     return f"Search in the reports of {', '.join(query_companies_names[:-1])}, and {query_companies_names[-1]}"
 
 
 def query_single_report(reportId, prompt, numberOfReturnedChunks=5):
