@@ -185,7 +185,7 @@ try:
             st.markdown("### Search Engine")
             st.caption(":gray[Reports marked with an asterisk (*) cannot yet be queried. We will upload them soon!]")
 
-            prompt = st.chat_input(define_popover_title(query_companies_df), disabled=query_companies == [] or len(query_companies) > 5)
+            prompt = st.chat_input(define_popover_title(query_companies_df), disabled=query_companies == [] or len(query_companies) > 1)
 
             if prompt:
                 try:
