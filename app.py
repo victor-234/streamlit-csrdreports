@@ -49,9 +49,9 @@ try:
     sheet_id = '17pxk3WyL-6Fhyw2WATl_Czn9MVpNk-A-LoWxQzhxopU'
     log_spreadsheet = google_client.open_by_key(sheet_id)
     log_prompt = log_spreadsheet.worksheet("prompts")
-    log_users = log_spreadsheet.worksheet("users")
+    # log_users = log_spreadsheet.worksheet("users")
 
-    log_users.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), st.query_params.get("ref", "")])# .../?ref=linkedin_victor logs the referrer
+    # log_users.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), st.query_params.get("ref", "")])# .../?ref=linkedin_victor logs the referrer
 
 except Exception as e:
     print(e)
