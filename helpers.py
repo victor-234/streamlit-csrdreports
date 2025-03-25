@@ -4,6 +4,9 @@ import altair as alt
 import pandas as pd
 import numpy as np
 import requests
+from sklearn.metrics.pairwise import cosine_similarity
+from ast import literal_eval
+from mistralai import Mistral
 
 from streamlit_pdf_viewer import pdf_viewer
 
@@ -48,11 +51,11 @@ def read_data() -> pd.DataFrame:
                     )
                 .query("year == 2024")
                 .drop_duplicates(subset=['isin'])
-                .drop(["company", "pages"], axis=1)
+                .drop(["company", "pages", "year", "type"], axis=1)
             ),
-            on=["isin"], how="outer", indicator=True
+            on=["isin"], how="outer", indicator="_mergeHeatmap"
         )
-        .query("_merge != 'right_only'")
+        .query("_mergeHeatmap != 'right_only'")
         .sort_values("publication date", ascending=True)
     )
 
@@ -96,7 +99,7 @@ def plot_ui(which: str, df: pd.DataFrame) -> None:
                     {len(df)}
                 </p>
                 <p style="margin-top: 10px;">CSRD reports so far</p>
-                <a href="https://sustainabilityreportingnavigator.com/csrd-first100.pdf" target="_blank" style="color: #4200ff; font-size: 10pt">(Analysis of the first 100 reports)</a>
+                <a href="https://sustainabilityreportingnavigator.com/csrd-first100.pdf" target="_blank" style="font-size: 10pt">(Analysis of the first 100 reports)</a>
             </div>
             """,
             unsafe_allow_html=True
@@ -251,16 +254,19 @@ def get_all_reports() -> pd.DataFrame:
         )
 
 
-def define_popover_title(query_companies_names) -> str:
+def define_popover_title(query_companies_df) -> str:
+    query_companies_names = query_companies_df['company'].values
     """ Define the title for the popover """
     if len(query_companies_names) == 0:
-        return "Select companies from the table by selecting the box to the left of the name"
-    elif len(query_companies_names) > 5:
-        return f"You can only select a maximum of five companies ({len(query_companies_names)} selected)"
+        return "Select a company from the table by selecting the box to the left of the name"
+    elif len(query_companies_names) > 1:
+        return f"You can only select one company currently ({len(query_companies_names)} selected)"
     elif len(query_companies_names) == 1:
         return f"Search in the report of {query_companies_names[0]}"
-    elif len(query_companies_names) > 1:
-        return f"Search in the reports of {', '.join(query_companies_names[:-1])}, and {query_companies_names[-1]}"
+    # elif len(query_companies_names) == 2:
+    #     return f"Search in the report of {query_companies_names[0]} and {query_companies_names[1]}"
+    # elif len(query_companies_names) > 1:
+    #     return f"Search in the reports of {', '.join(query_companies_names[:-1])}, and {query_companies_names[-1]}"
 
 
 def query_single_report(reportId, prompt, numberOfReturnedChunks=5):
@@ -288,20 +294,20 @@ def summarize_text_bygpt(client, queryText, relevantChunkTexts):
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": "You are an expert in gathering information from sustainability reports."},
-            {"role": "user", "content": f"Answer diligently on this question {queryText} from the following chunks of the report:"},
-            {"role": "user", "content": relevantChunkTexts},
+            {"role": "user", "content": f"Answer diligently on this question {queryText} from the following texts of the report:"},
+            {"role": "user", "content": relevantChunkTexts.replace("\n", " ").replace("\t", " ")},
             {"role": "user", "content": f"Be concise and provide the most relevant information from the texts only. Do not use the internet or general knowledge."},
         ],
         stream=True
         )
 
 
-def display_annotated_pdf(query_report_link, query_results_annotations):
+def display_annotated_pdf(query_report_link, pages_to_render):
     return pdf_viewer(
-        input=download_pdf(query_report_link),
-        annotations=query_results_annotations,
-        height=800,
-        pages_to_render=[a["page"] for a in query_results_annotations],
+        input=download_pdf(query_report_link), 
+        height=800, 
+        pages_to_render=pages_to_render, 
+        resolution_boost=2
         )
 
 
@@ -341,3 +347,62 @@ def create_google_auth_credentials():
             f,
             indent=4
         )
+
+
+def read_supabase_documents(supabase):
+    return (
+        pd.DataFrame(
+            (
+                supabase
+                .from_("documents")
+                .select("id, company_id, year, type, pages, companies(id, name, isin)")
+                .execute()
+            )
+            .data
+        )
+        .assign(
+            company = lambda x: x['companies'].apply(lambda y: y['name']),
+            isin = lambda x: x['companies'].apply(lambda y: y['isin'])
+        )
+        .drop("companies", axis=1)
+        .rename(columns={
+            'id': 'document_id'
+        })
+    )
+
+
+def get_most_similar_pages(prompt: str, pages: list, top_pages=3):
+    """ Embed prompt with Mistral, compare with all supplied pages and return topk """
+    client = Mistral(api_key=st.secrets["MISTRAL_API_KEY"])
+    embeddings_response = client.embeddings.create(
+        model="mistral-embed",
+        inputs=prompt
+    )
+    prompt_emb = embeddings_response.data[0].embedding
+
+    for page in pages:
+        if len(page["content"].strip()) < 500:
+            page["score"] = 0
+        else:
+            distance = cosine_similarity([literal_eval(page["embedding"])], [prompt_emb])
+            page["score"] = distance[0][0]
+
+
+    pages = sorted(pages, key=lambda x: x["score"], reverse=True)
+    pages = pages[:top_pages]
+    
+    return pages
+
+
+def read_supabase_pages(supabase):
+    return (
+        pd.DataFrame(
+            (
+                supabase
+                .from_("unique_pages")
+                .select("document_id")
+                .execute()
+            )
+            .data
+        )
+    )

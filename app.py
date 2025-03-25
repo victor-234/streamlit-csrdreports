@@ -1,30 +1,41 @@
 import streamlit as st
-import requests
-import gspread
-
 import pandas as pd
-import altair as alt
-
-from openai import OpenAI
-from google.oauth2.service_account import Credentials
 from datetime import datetime
+from mistralai import Mistral
+from supabase import create_client, Client
+from google.oauth2.service_account import Credentials
+import gspread
+import ast
+from openai import OpenAI
 
 from helpers import read_data
 from helpers import define_standard_info_mapper
 from helpers import plot_ui
 from helpers import plot_heatmap
+from helpers import read_supabase_documents
 from helpers import display_annotated_pdf
 from helpers import get_all_reports
 from helpers import query_single_report
 from helpers import define_popover_title
 from helpers import summarize_text_bygpt
 from helpers import create_google_auth_credentials
+from helpers import get_most_similar_pages
+from helpers import read_supabase_pages
+
 
 
 # ------------------------------------ SETUP ----------------------------------
-st.set_page_config(layout="wide", page_title="SRN CSRD Archive", page_icon="srn-icon.png")
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+st.set_page_config(layout="wide", page_title="CSRD Reports | SRN", page_icon="srn-icon.png")
 st.markdown("""<style> footer {visibility: hidden;} </style> """, unsafe_allow_html=True)
+
+# Supabase
+supabase_url: str = st.secrets["SUPABASE_URL"]
+supabase_key: str = st.secrets["SUPABASE_KEY"]
+supabase: Client = create_client(supabase_url, supabase_key)
+
+
+# OpenAI
+openai_client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # Google Sheets API
 create_google_auth_credentials()
@@ -39,15 +50,21 @@ log_spreadsheet = google_client.open_by_key(sheet_id)
 log_prompt = log_spreadsheet.worksheet("prompts")
 log_users = log_spreadsheet.worksheet("users")
 
+log_users.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), st.query_params.get("ref", "")])# .../?ref=linkedin_victor logs the referrer
 
-# .../?ref=linkedin_victor logs the referrer
-log_users.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), st.query_params.get("ref", "")])
-
-
-# ------------------------------------ DATA ----------------------------------
-df = read_data()
 standard_info_mapper = define_standard_info_mapper()
-sunhat_reports = get_all_reports()
+
+googlesheet = read_data()
+hosted_docs = read_supabase_documents(supabase)
+pages = read_supabase_pages(supabase)
+
+df = (
+    googlesheet
+    .merge(hosted_docs, on=['company', 'isin'], how="outer", indicator="_mergeSupabase")
+    .dropna(subset=["company", "isin", "country", "sector", "industry"])
+    .merge(pages, on=["document_id"], how="outer", indicator="_mergePages")
+    .query('_mergePages != "right_only"')
+)
 
 
 if "selected_companies" not in st.session_state:
@@ -97,36 +114,45 @@ filtered_df = df[
 with col3:
     selected_companies = st.multiselect(
         label="Filter by name",
-        options=[None] + sorted(df["company"].str.title().unique()),
+        options=[None] + sorted(df["company"]),
         default=None,
         key="tab1_selectbox"
     )
 
 # If the user selects a company, we filter; otherwise we keep all rows.
 if len(selected_companies) != 0:
-    filtered_df = filtered_df[filtered_df["company"].str.title().isin(selected_companies)]
+    filtered_df = filtered_df[filtered_df["company"].isin(selected_companies)]
 
 
+filtered_and_sorted_df = (
+        filtered_df
+        .assign(
+            company_withAccessInfo = lambda x: [
+                company if _mergePages == "both" else f"{company}*" 
+                for company, _mergePages in zip(x["company"], x["_mergePages"])
+                ],
+            company_uncased = lambda x: x["company"].str.lower()
+            )
+        .sort_values("company_uncased", ascending=True)
+    )
 
 try:
     tab1, tab2 = st.tabs(["List of reports", "Heatmap of topics reported"])
+
 
     # ------------------------------------ TABLE ----------------------------------
     with tab1:
 
         table = st.dataframe(
-            (
-                filtered_df
-                # .assign(company = lambda x: [f"{name}*" if isin not in set(sunhat_reports["isin"]) else name for name, isin in zip(x['company'], x['isin'])])
-                .loc[:, ["company", "link", "country", "sector", "industry", "publication date", "pages PDF", "auditor"]]
-            ),
+            filtered_and_sorted_df.loc[:, [
+                "company_withAccessInfo", "link", "country", "sector", "industry", "publication date", "pages PDF", "auditor"
+                ]],
             column_config={
-                "company": st.column_config.Column(width="medium", label="Company"),
+                "company_withAccessInfo": st.column_config.Column(width="medium", label="Company"),
                 "link": st.column_config.LinkColumn(
                     label="Download",
                     width="small",
                     display_text="Link"
-                    # display_text="^https://.*#download=(.*)$"
                 ),
                 "country": st.column_config.Column(label="Country"),
                 "sector": st.column_config.Column(width="medium", label="Sector"),
@@ -144,73 +170,97 @@ try:
             hide_index=True,
             on_select="rerun",
             selection_mode="multi-row",
-            # height=35 * len(filtered_df) + 38,
         )
 
         query_companies = table.selection.rows
-        query_companies_names = filtered_df.iloc[query_companies, :]["company"].tolist()
+        query_companies_df = filtered_and_sorted_df.iloc[query_companies, :]
 
 
-    # with st.container():
-    #     st.markdown("### Search Engine")
-    #     st.caption(":gray[Reports marked with an asterisk (*) cannot yet be queried. Report search [powered by Sunhat](https://www.getsunhat.com).]")
+        # ----- SEARCH ENGINE -----
+        with st.container():
+            st.markdown("### Search Engine")
+            st.caption(":gray[Reports marked with an asterisk (*) cannot yet be queried. We will upload them soon!]")
 
-    #     prompt = st.chat_input(define_popover_title(query_companies_names), disabled=query_companies == [] or len(query_companies) > 5)
+            prompt = st.chat_input(define_popover_title(query_companies_df), disabled=query_companies == [] or len(query_companies) > 5)
 
-    #     if prompt:
-    #         log_prompt.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), prompt, ", ".join(query_companies_names)])
-    #         query_reports = sunhat_reports[sunhat_reports["companyName"].isin(query_companies_names)]
+            if prompt:
+                log_prompt.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), prompt, ", ".join(query_companies_df['company'].values)])
 
-    #         # For each report, query relevant chunks from PDF (Sunhat), summarize them (GPT-4o), and stream
-    #         for _, query_report in query_reports.iterrows():
-    #             query_response = query_single_report(query_report['id'], prompt).json()
+                for _, query_document in query_companies_df.iterrows():
+                    # Define stuff
+                    query_company_name = query_document['company']
+                    query_document_id = query_document['document_id']
+                    query_document_start_page_pdf = int(ast.literal_eval(query_document["pages"])[0])
+                    query_document_url = f"https://gbixxtefgqebkaviusss.supabase.co/storage/v1/object/public/document-pdfs/{query_document_id}.pdf"
+
+                    try:
+                        with st.spinner():
+                            # Query all pages of the selected document
+                            query_report_allpages = (
+                                supabase.table("pages")
+                                .select("*")
+                                .eq("document_id", query_document_id)
+                                .execute()
+                            ).data
+
+                        similar_pages = get_most_similar_pages(prompt, query_report_allpages, top_pages=5)
+                                            
+                        if similar_pages == []:
+                            st.error(f"We have not processed the report of {query_company_name}.")
+
+                        else:
+                            with st.expander(query_company_name, expanded=True):
+                                col_expander_response, col_expander_pdf = st.columns([0.35, 0.65])
+
+                                # Left column: Prompt + OpenAI response (@To-Do: switch to Mistral)
+                                with col_expander_response:
+                                    query_results_text = "\n".join([x["content"] for x in similar_pages])
+
+                                    with st.chat_message("user"):
+                                        st.text(prompt)
+
+                                    with st.chat_message("assistant"):
+                                        stream = summarize_text_bygpt(
+                                            client=openai_client, 
+                                            queryText=prompt, 
+                                            relevantChunkTexts=query_results_text
+                                            )
+                                        
+                                        gpt_response = st.write_stream(stream)
+                                        
+                                        relevant_pages_first = int(similar_pages[0]["page"]) - query_document_start_page_pdf + 1
+                                        st.markdown(f"[Access the full report here]({query_document_url}) or jump directly [to the relevant pages]({query_document_url + f"#page={relevant_pages_first}"})")
+
+                                # Right column: Render relevant PDF pages
+                                with col_expander_pdf:
+                                    pages_to_render = [
+                                        int(p["page"]) - query_document_start_page_pdf + 1
+                                        for p in similar_pages
+                                        ]
+
+                                    with st.spinner("Downloading and finding the relevant pages", show_time=True):
+                                        display_annotated_pdf(
+                                            query_document_url,
+                                            pages_to_render=pages_to_render[:3]
+                                            )
+
+
+                    except Exception as e:
+                        st.error(f"Could not find any relevant information in the PDF for {query_company_name}.")
+                        print(e)
             
-    #             if query_response.get("data", []) == []:
-    #                 st.error(f"Could not find any relevant information in the PDF for {query_report['companyName']}.")
-
-    #             else:
-    #                 query_results = query_response["data"]
-    #                 with st.expander(query_report['companyName'], expanded=True):
-    #                     col_expander_response, col_expander_pdf = st.columns([0.35, 0.65])
-
-    #                     with col_expander_response:
-    #                         query_results_text = "\n".join([x["text"] for x in query_results])
-    #                         print(query_results_text)
-
-    #                         with st.chat_message("user"):
-    #                             st.text(prompt)
-
-    #                         with st.chat_message("assistant"):
-    #                             stream = summarize_text_bygpt(
-    #                                 client=client, 
-    #                                 queryText=prompt, 
-    #                                 relevantChunkTexts=query_results_text
-    #                                 )
-                                
-    #                             gpt_response = st.write_stream(stream)
-    #                             st.markdown(f"[Access the full report here]({query_report['link']})")
-
-
-    #                     with col_expander_pdf:
-    #                         query_results_annotations = [{
-    #                             "page": c["page"]+1,
-    #                             "x": c["x1"],
-    #                             "y": c["y1"],
-    #                             "height": c["y2"] - c["y1"],
-    #                             "width": c["x2"] - c["x1"],
-    #                             "color": "#4200ff"
-    #                             } for c in query_results]
-                            
-    #                         with st.spinner("Downloading and annotating the PDF", show_time=True):
-    #                             display_annotated_pdf(query_report['link'], query_results_annotations)
-                            
-
-
-        
+            st.caption(
+                ":gray[How does this work?]", 
+                help="""### How does this work?\nThe search engine leverages Retrieval Augmented Generation (RAG), a technique that enhances the ability of large language models (LLMs) to retrieve information from unstructured sources. First, we convert all pages of the sustainability statement into machine-readable text using [MistralOCR](https://docs.mistral.ai/capabilities/document/).
+                \nNext, we embed this text using [Mistral's embedding model](https://docs.mistral.ai/capabilities/embeddings/), which converts the text into a numerical format. This numerical representation allows us to identify the 10 pages most relevant to the query.
+                \nFinally, [OpenAI's GPT 4o-mini](https://platform.openai.com/docs/models/gpt-4o-mini) reads the user prompt and reviews the 10 selected pages to generate an answer based on the retrieved information.
+                \n**Disclaimer:** The generated answer is produced by an artificial intelligence language model. While we strive for accuracy and quality through our prompt design and by using information provided solely by the company, please note that the content may not be completely error-free or up-to-date. We recommend independently verifying the information and consulting professionals for specific advice. We assume no responsibility or liability for the use or interpretation of this content, and it does not constitute investment advice.""")
 
 
 
-    # ------------------------------------ HEATMAP ----------------------------------
+
+
+# ------------------------------------ HEATMAP ----------------------------------
     with tab2:
         col_tab2_left, col_tab2_right = st.columns([0.5, 0.5])
 
