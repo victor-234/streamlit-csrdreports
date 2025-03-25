@@ -188,10 +188,10 @@ try:
             prompt = st.chat_input(define_popover_title(query_companies_df), disabled=query_companies == [] or len(query_companies) > 1)
 
             if prompt:
-                try:
-                    log_prompt.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), prompt, ", ".join(query_companies_df['company'].values)])
-                except Exception as e:
-                    print(e)
+                # try:
+                #     log_prompt.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), prompt, ", ".join(query_companies_df['company'].values)])
+                # except Exception as e:
+                #     print(e)
 
                 for _, query_document in query_companies_df.iterrows():
                     # Define stuff
