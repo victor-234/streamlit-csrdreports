@@ -38,19 +38,23 @@ supabase: Client = create_client(supabase_url, supabase_key)
 openai_client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # Google Sheets API
-create_google_auth_credentials()
-scope = ['https://www.googleapis.com/auth/spreadsheets']
-creds = Credentials.from_service_account_file(
-    "google-auth-credentials.json",
-    scopes=scope
-)
-google_client = gspread.authorize(creds)
-sheet_id = '17pxk3WyL-6Fhyw2WATl_Czn9MVpNk-A-LoWxQzhxopU'
-log_spreadsheet = google_client.open_by_key(sheet_id)
-log_prompt = log_spreadsheet.worksheet("prompts")
-log_users = log_spreadsheet.worksheet("users")
+try:
+    create_google_auth_credentials()
+    scope = ['https://www.googleapis.com/auth/spreadsheets']
+    creds = Credentials.from_service_account_file(
+        "google-auth-credentials.json",
+        scopes=scope
+    )
+    google_client = gspread.authorize(creds)
+    sheet_id = '17pxk3WyL-6Fhyw2WATl_Czn9MVpNk-A-LoWxQzhxopU'
+    log_spreadsheet = google_client.open_by_key(sheet_id)
+    log_prompt = log_spreadsheet.worksheet("prompts")
+    log_users = log_spreadsheet.worksheet("users")
 
-log_users.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), st.query_params.get("ref", "")])# .../?ref=linkedin_victor logs the referrer
+    log_users.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), st.query_params.get("ref", "")])# .../?ref=linkedin_victor logs the referrer
+
+except Exception as e:
+    print(e)
 
 standard_info_mapper = define_standard_info_mapper()
 
@@ -184,7 +188,10 @@ try:
             prompt = st.chat_input(define_popover_title(query_companies_df), disabled=query_companies == [] or len(query_companies) > 5)
 
             if prompt:
-                log_prompt.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), prompt, ", ".join(query_companies_df['company'].values)])
+                try:
+                    log_prompt.append_row([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), prompt, ", ".join(query_companies_df['company'].values)])
+                except Exception as e:
+                    print(e)
 
                 for _, query_document in query_companies_df.iterrows():
                     # Define stuff
