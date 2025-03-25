@@ -256,6 +256,7 @@ try:
                 \nFinally, [OpenAI's GPT 4o-mini](https://platform.openai.com/docs/models/gpt-4o-mini) reads the user prompt and reviews the 10 selected pages to generate an answer based on the retrieved information.
                 \n**Disclaimer:** The generated answer is produced by an artificial intelligence language model. While we strive for accuracy and quality through our prompt design and by using information provided solely by the company, please note that the content may not be completely error-free or up-to-date. We recommend independently verifying the information and consulting professionals for specific advice. We assume no responsibility or liability for the use or interpretation of this content, and it does not constitute investment advice.""")
 
+            st.markdown("<div style='padding-bottom: 25px;'/>", unsafe_allow_html=True)
 
 
 
