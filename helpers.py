@@ -13,7 +13,7 @@ from streamlit_pdf_viewer import pdf_viewer
 from streamlit import runtime
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
-
+@st.cache_data
 def read_data() -> pd.DataFrame:
     """
     Read data the SRN CSRD Archive Google Sheet, merge Industry-Sector lookup
@@ -405,4 +405,32 @@ def read_supabase_pages(supabase):
             )
             .data
         )
+    )
+
+
+def log_query_to_supabase(supabase, document_id: str, query: str):
+    (
+        supabase
+        .table("log_queries")
+        .insert(
+            {
+                "document_id": document_id,
+                "content": query
+            }
+        )
+        .execute()
+    )
+
+@st.cache_data
+def log_user_to_supabase(_supabase):
+    (
+        _supabase
+        .table("log_queries")
+        .insert(
+            {
+                "document_id": None,
+                "content": "access"
+            }
+        )
+        .execute()
     )
