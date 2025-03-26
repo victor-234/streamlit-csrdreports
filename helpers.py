@@ -434,3 +434,14 @@ def log_user_to_supabase(_supabase):
         )
         .execute()
     )
+
+
+def translate_prompt(client, prompt):
+    return client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are a proficient English translator."},
+            {"role": "system", "content": "Translate the following sentence without losing any of its meaning and trying to use the same literal words as the original in English:"},
+            {"role": "system", "content": prompt},
+        ]
+    ).choices[0].message.content

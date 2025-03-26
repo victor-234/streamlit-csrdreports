@@ -4,7 +4,7 @@ from datetime import datetime
 from mistralai import Mistral
 from supabase import create_client, Client
 from google.oauth2.service_account import Credentials
-import gspread
+import langdetect
 import ast
 from openai import OpenAI
 
@@ -23,6 +23,7 @@ from helpers import get_most_similar_pages
 from helpers import read_supabase_pages
 from helpers import log_user_to_supabase
 from helpers import log_query_to_supabase
+from helpers import translate_prompt
 
 
 
@@ -172,6 +173,11 @@ try:
             prompt = st.chat_input(define_popover_title(query_companies_df), disabled=query_companies == [] or len(query_companies) > 1)
 
             if prompt:
+                
+                if not langdetect.detect(prompt) == "en":
+                    translated_prompt = translate_prompt(openai_client, prompt)
+                    prompt = translated_prompt + f"(original prompt: {prompt})"
+
 
                 for _, query_document in query_companies_df.iterrows():
                     # Define stuff

@@ -9,3 +9,4 @@ google
 mistralai
 supabase
 scikit-learn
+langdetect
