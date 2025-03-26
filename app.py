@@ -176,8 +176,7 @@ try:
                 
                 if not langdetect.detect(prompt) == "en":
                     translated_prompt = translate_prompt(openai_client, prompt)
-                    prompt = translated_prompt + f"(original prompt: {prompt})"
-
+                    prompt = translated_prompt + f" (original prompt: {prompt})"
 
                 for _, query_document in query_companies_df.iterrows():
                     # Define stuff
