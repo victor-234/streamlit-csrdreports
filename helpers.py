@@ -13,7 +13,7 @@ from streamlit_pdf_viewer import pdf_viewer
 from streamlit import runtime
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
-@st.cache_data
+
 def read_data() -> pd.DataFrame:
     """
     Read data the SRN CSRD Archive Google Sheet, merge Industry-Sector lookup
