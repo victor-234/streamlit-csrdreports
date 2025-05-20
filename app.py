@@ -32,11 +32,11 @@ st.set_page_config(layout="wide", page_title="CSRD Reports | SRN", page_icon="sr
 st.markdown("""<style> footer {visibility: hidden;} </style> """, unsafe_allow_html=True)
 
 # Supabase
-supabase_url: str = st.secrets["SUPABASE_URL"]
-supabase_key: str = st.secrets["SUPABASE_KEY"]
-supabase: Client = create_client(supabase_url, supabase_key)
+# supabase_url: str = st.secrets["SUPABASE_URL"]
+# supabase_key: str = st.secrets["SUPABASE_KEY"]
+# supabase: Client = create_client(supabase_url, supabase_key)
 
-log_user_to_supabase(supabase)
+# log_user_to_supabase(supabase)
 
 # OpenAI
 openai_client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
@@ -44,15 +44,15 @@ openai_client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 standard_info_mapper = define_standard_info_mapper()
 
 googlesheet = read_data()
-hosted_docs = read_supabase_documents(supabase)
-pages = read_supabase_pages(supabase)
+# hosted_docs = read_supabase_documents(supabase)
+# pages = read_supabase_pages(supabase)
 
 df = (
     googlesheet
-    .merge(hosted_docs, on=['company', 'isin'], how="outer", indicator="_mergeSupabase")
+    # .merge(hosted_docs, on=['company', 'isin'], how="outer", indicator="_mergeSupabase")
     .dropna(subset=["company", "isin", "country", "sector", "industry"])
-    .merge(pages, on=["document_id"], how="outer", indicator="_mergePages")
-    .query('_mergePages != "right_only"')
+    # .merge(pages, on=["document_id"], how="outer", indicator="_mergePages")
+    # .query('_mergePages != "right_only"')
 )
 
 
@@ -116,10 +116,11 @@ if len(selected_companies) != 0:
 filtered_and_sorted_df = (
         filtered_df
         .assign(
-            company_withAccessInfo = lambda x: [
-                company if _mergePages == "both" else f"{company}*" 
-                for company, _mergePages in zip(x["company"], x["_mergePages"])
-                ],
+            # company_withAccessInfo = lambda x: [
+            #     company if _mergePages == "both" else f"{company}*" 
+            #     for company, _mergePages in zip(x["company"], x["_mergePages"])
+            #     ],
+            company_withAccessInfo = lambda x : x["company"],
             company_uncased = lambda x: x["company"].str.lower()
             )
         .sort_values("company_uncased", ascending=True)
@@ -164,93 +165,94 @@ try:
         query_companies = table.selection.rows
         query_companies_df = filtered_and_sorted_df.iloc[query_companies, :]
 
+        st.markdown("🚧 The AI-powered search engine is currently under construction. Follow us on LinkedIn and don't miss our upcoming rework!")
 
-        # ----- SEARCH ENGINE -----
-        with st.container():
-            st.markdown("### Search Engine")
-            st.caption(":gray[Reports marked with an asterisk (*) cannot yet be queried. We will upload them soon!]")
+        # # ----- SEARCH ENGINE -----
+        # with st.container():
+        #     st.markdown("### Search Engine")
+        #     st.caption(":gray[Reports marked with an asterisk (*) cannot yet be queried. We will upload them soon!]")
 
-            prompt = st.chat_input(define_popover_title(query_companies_df), disabled=query_companies == [] or len(query_companies) > 1)
+        #     prompt = st.chat_input(define_popover_title(query_companies_df), disabled=query_companies == [] or len(query_companies) > 1)
 
-            if prompt:
+        #     if prompt:
                 
-                if not langdetect.detect(prompt) == "en":
-                    translated_prompt = translate_prompt(openai_client, prompt)
-                    prompt = translated_prompt + f" (original prompt: {prompt})"
+        #         if not langdetect.detect(prompt) == "en":
+        #             translated_prompt = translate_prompt(openai_client, prompt)
+        #             prompt = translated_prompt + f" (original prompt: {prompt})"
 
-                for _, query_document in query_companies_df.iterrows():
-                    # Define stuff
-                    query_company_name = query_document['company']
-                    query_document_id = query_document['document_id']
-                    query_document_start_page_pdf = int(ast.literal_eval(query_document["pages"])[0])
-                    query_document_url = f"https://gbixxtefgqebkaviusss.supabase.co/storage/v1/object/public/document-pdfs/{query_document_id}.pdf"
+        #         for _, query_document in query_companies_df.iterrows():
+        #             # Define stuff
+        #             query_company_name = query_document['company']
+        #             query_document_id = query_document['document_id']
+        #             query_document_start_page_pdf = int(ast.literal_eval(query_document["pages"])[0])
+        #             query_document_url = f"https://gbixxtefgqebkaviusss.supabase.co/storage/v1/object/public/document-pdfs/{query_document_id}.pdf"
                     
-                    log_query_to_supabase(supabase, query_document_id, prompt)
+        #             log_query_to_supabase(supabase, query_document_id, prompt)
 
-                    try:
-                        with st.spinner():
-                            # Query all pages of the selected document
-                            query_report_allpages = (
-                                supabase.table("pages")
-                                .select("*")
-                                .eq("document_id", query_document_id)
-                                .execute()
-                            ).data
+        #             try:
+        #                 with st.spinner():
+        #                     # Query all pages of the selected document
+        #                     query_report_allpages = (
+        #                         supabase.table("pages")
+        #                         .select("*")
+        #                         .eq("document_id", query_document_id)
+        #                         .execute()
+        #                     ).data
 
-                        similar_pages = get_most_similar_pages(prompt, query_report_allpages, top_pages=5)
+        #                 similar_pages = get_most_similar_pages(prompt, query_report_allpages, top_pages=5)
                                             
-                        if similar_pages == []:
-                            st.error(f"We have not processed the report of {query_company_name}.")
+        #                 if similar_pages == []:
+        #                     st.error(f"We have not processed the report of {query_company_name}.")
 
-                        else:
-                            with st.expander(query_company_name, expanded=True):
-                                col_expander_response, col_expander_pdf = st.columns([0.35, 0.65])
+        #                 else:
+        #                     with st.expander(query_company_name, expanded=True):
+        #                         col_expander_response, col_expander_pdf = st.columns([0.35, 0.65])
 
-                                # Left column: Prompt + OpenAI response (@To-Do: switch to Mistral)
-                                with col_expander_response:
-                                    query_results_text = "\n".join([x["content"] for x in similar_pages])
+        #                         # Left column: Prompt + OpenAI response (@To-Do: switch to Mistral)
+        #                         with col_expander_response:
+        #                             query_results_text = "\n".join([x["content"] for x in similar_pages])
 
-                                    with st.chat_message("user"):
-                                        st.text(prompt)
+        #                             with st.chat_message("user"):
+        #                                 st.text(prompt)
 
-                                    with st.chat_message("assistant"):
-                                        stream = summarize_text_bygpt(
-                                            client=openai_client, 
-                                            queryText=prompt, 
-                                            relevantChunkTexts=query_results_text
-                                            )
+        #                             with st.chat_message("assistant"):
+        #                                 stream = summarize_text_bygpt(
+        #                                     client=openai_client, 
+        #                                     queryText=prompt, 
+        #                                     relevantChunkTexts=query_results_text
+        #                                     )
                                         
-                                        gpt_response = st.write_stream(stream)
+        #                                 gpt_response = st.write_stream(stream)
                                         
-                                        relevant_pages_first = int(similar_pages[0]["page"]) - query_document_start_page_pdf + 1
-                                        st.markdown(f"[Access the full report here]({query_document_url}) or jump directly [to the relevant pages]({query_document_url + f"#page={relevant_pages_first}"})")
+        #                                 relevant_pages_first = int(similar_pages[0]["page"]) - query_document_start_page_pdf + 1
+        #                                 st.markdown(f"[Access the full report here]({query_document_url}) or jump directly [to the relevant pages]({query_document_url + f"#page={relevant_pages_first}"})")
 
-                                # Right column: Render relevant PDF pages
-                                with col_expander_pdf:
-                                    pages_to_render = [
-                                        int(p["page"]) - query_document_start_page_pdf + 1
-                                        for p in similar_pages
-                                        ]
+        #                         # Right column: Render relevant PDF pages
+        #                         with col_expander_pdf:
+        #                             pages_to_render = [
+        #                                 int(p["page"]) - query_document_start_page_pdf + 1
+        #                                 for p in similar_pages
+        #                                 ]
 
-                                    with st.spinner("Downloading and finding the relevant pages", show_time=True):
-                                        display_annotated_pdf(
-                                            query_document_url,
-                                            pages_to_render=pages_to_render[:3]
-                                            )
+        #                             with st.spinner("Downloading and finding the relevant pages", show_time=True):
+        #                                 display_annotated_pdf(
+        #                                     query_document_url,
+        #                                     pages_to_render=pages_to_render[:3]
+        #                                     )
 
 
-                    except Exception as e:
-                        st.error(f"Could not find any relevant information in the PDF for {query_company_name}.")
-                        print(e)
+        #             except Exception as e:
+        #                 st.error(f"Could not find any relevant information in the PDF for {query_company_name}.")
+        #                 print(e)
             
-            st.caption(
-                ":gray[How does this work?]", 
-                help="""### How does this work?\nThe search engine leverages Retrieval Augmented Generation (RAG), a technique that enhances the ability of large language models (LLMs) to retrieve information from unstructured sources. First, we convert all pages of the sustainability statement into machine-readable text using [MistralOCR](https://docs.mistral.ai/capabilities/document/).
-                \nNext, we embed this text using [Mistral's embedding model](https://docs.mistral.ai/capabilities/embeddings/), which converts the text into a numerical format. This numerical representation allows us to identify the 10 pages most relevant to the query.
-                \nFinally, [OpenAI's GPT 4o-mini](https://platform.openai.com/docs/models/gpt-4o-mini) reads the user prompt and reviews the 10 selected pages to generate an answer based on the retrieved information.
-                \n**Disclaimer:** The generated answer is produced by an artificial intelligence language model. While we strive for accuracy and quality through our prompt design and by using information provided solely by the company, please note that the content may not be completely error-free or up-to-date. We recommend independently verifying the information and consulting professionals for specific advice. We assume no responsibility or liability for the use or interpretation of this content, and it does not constitute investment advice.""")
+        #     st.caption(
+        #         ":gray[How does this work?]", 
+        #         help="""### How does this work?\nThe search engine leverages Retrieval Augmented Generation (RAG), a technique that enhances the ability of large language models (LLMs) to retrieve information from unstructured sources. First, we convert all pages of the sustainability statement into machine-readable text using [MistralOCR](https://docs.mistral.ai/capabilities/document/).
+        #         \nNext, we embed this text using [Mistral's embedding model](https://docs.mistral.ai/capabilities/embeddings/), which converts the text into a numerical format. This numerical representation allows us to identify the 10 pages most relevant to the query.
+        #         \nFinally, [OpenAI's GPT 4o-mini](https://platform.openai.com/docs/models/gpt-4o-mini) reads the user prompt and reviews the 10 selected pages to generate an answer based on the retrieved information.
+        #         \n**Disclaimer:** The generated answer is produced by an artificial intelligence language model. While we strive for accuracy and quality through our prompt design and by using information provided solely by the company, please note that the content may not be completely error-free or up-to-date. We recommend independently verifying the information and consulting professionals for specific advice. We assume no responsibility or liability for the use or interpretation of this content, and it does not constitute investment advice.""")
 
-            st.markdown("<div style='padding-bottom: 25px;'/>", unsafe_allow_html=True)
+        #     st.markdown("<div style='padding-bottom: 25px;'/>", unsafe_allow_html=True)
 
 
 
